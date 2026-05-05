@@ -14,14 +14,16 @@ jobs:
       contents: write
     
     steps:
+      - name: Checkout Code
+        # This fixes the "failed to run git" error
+        uses: actions/checkout@v4
+
       - name: Download VS Bootstrapper
         run: |
           Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_community.exe" -OutFile vs_community.exe
 
       - name: Create Offline Layout
         run: |
-          # We use Start-Process -Wait to ensure PowerShell stays attached until completion.
-          # --quiet is preferred over --passive for headless environments.
           $params = "--layout `"${{ github.workspace }}\WinUI_Layout`" ",
                     "--add Microsoft.VisualStudio.Workload.Universal ",
                     "--includeRecommended ",
@@ -30,37 +32,31 @@ jobs:
                     "--norestart ",
                     "--wait"
           
-          Write-Host "Starting download/layout process... This will take several minutes."
-          
+          Write-Host "Starting download/layout process..."
           $process = Start-Process -FilePath ".\vs_community.exe" -ArgumentList $params -Wait -PassThru
-          
-          Write-Host "Installer exited with code: $($process.ExitCode)"
           
           if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
             Write-Error "Visual Studio Installer failed with exit code $($process.ExitCode)"
             exit 1
           }
 
-      - name: Verify Layout Folder
+      - name: Ultra Aggressive Compression (7-Zip LZMA2)
         run: |
-          if (Test-Path -Path "${{ github.workspace }}\WinUI_Layout") {
-              $size = (Get-ChildItem "${{ github.workspace }}\WinUI_Layout" -Recurse | Measure-Object -Property Length -Sum).Sum / 1GB
-              Write-Host "Layout folder created. Total size: $('{0:N2}' -f $size) GB"
-          } else {
-              Write-Error "Layout folder was NOT created."
-              exit 1
-          }
-
-      - name: Aggressive Compression (7-Zip)
-        run: |
-          # -mx9: Ultra compression
-          # -ms=on: Solid archive (required for high compression on VS layouts)
-          7z a -t7z -mx=9 -ms=on WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
+          # TUNING PARAMETERS:
+          # -m0=lzma2: Uses the strongest algorithm
+          # -mx=9: Level 9 (Ultra)
+          # -md=256m: 256MB dictionary (Higher = better compression, requires more RAM. GitHub has 7GB RAM, so this is safe)
+          # -mfb=273: Maximize number of fast bytes for matches
+          # -ms=on: Solid archive (Treats all files as one stream; essential for VS layouts)
+          # -myx=9: Extensive file analysis
+          
+          7z a -t7z -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -myx=9 WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
 
       - name: Create Release and Upload
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # gh CLI now works because of the checkout step
           gh release create ${{ github.event.inputs.version }} WinUI_Offline_Bundle.7z `
             --title "WinUI Offline Installer ${{ github.event.inputs.version }}" `
-            --notes "Offline layout for WinUI 3 / Windows App SDK (Microsoft.VisualStudio.Workload.Universal)"
+            --notes "Optimized offline layout for WinUI 3 / Windows App SDK."
