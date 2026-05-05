@@ -20,31 +20,41 @@ jobs:
 
       - name: Create Offline Layout
         run: |
-          # --wait is CRITICAL. Without it, the script continues before the download finishes.
-          # --nocache reduces the final size by not keeping duplicate installer files.
-          ./vs_community.exe --layout ${{ github.workspace }}\WinUI_Layout `
-            --add Microsoft.VisualStudio.Workload.Universal `
-            --includeRecommended `
-            --lang en-US `
-            --passive `
-            --norestart `
-            --wait
+          # We use Start-Process -Wait to ensure PowerShell stays attached until completion.
+          # --quiet is preferred over --passive for headless environments.
+          $params = "--layout `"${{ github.workspace }}\WinUI_Layout`" ",
+                    "--add Microsoft.VisualStudio.Workload.Universal ",
+                    "--includeRecommended ",
+                    "--lang en-US ",
+                    "--quiet ",
+                    "--norestart ",
+                    "--wait"
+          
+          Write-Host "Starting download/layout process... This will take several minutes."
+          
+          $process = Start-Process -FilePath ".\vs_community.exe" -ArgumentList $params -Wait -PassThru
+          
+          Write-Host "Installer exited with code: $($process.ExitCode)"
+          
+          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
+            Write-Error "Visual Studio Installer failed with exit code $($process.ExitCode)"
+            exit 1
+          }
 
       - name: Verify Layout Folder
         run: |
-          if (Test-Path -Path ".\WinUI_Layout") {
-              Write-Host "Layout folder created successfully."
-              Get-ChildItem -Path ".\WinUI_Layout"
+          if (Test-Path -Path "${{ github.workspace }}\WinUI_Layout") {
+              $size = (Get-ChildItem "${{ github.workspace }}\WinUI_Layout" -Recurse | Measure-Object -Property Length -Sum).Sum / 1GB
+              Write-Host "Layout folder created. Total size: $('{0:N2}' -f $size) GB"
           } else {
-              Write-Error "Layout folder was NOT created. The installer likely failed."
+              Write-Error "Layout folder was NOT created."
               exit 1
           }
 
       - name: Aggressive Compression (7-Zip)
         run: |
-          # Using absolute paths to ensure 7z finds the folder
           # -mx9: Ultra compression
-          # -ms=on: Solid archive (crucial for VS layouts with many small files)
+          # -ms=on: Solid archive (required for high compression on VS layouts)
           7z a -t7z -mx=9 -ms=on WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
 
       - name: Create Release and Upload
