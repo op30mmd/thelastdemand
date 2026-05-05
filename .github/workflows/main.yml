@@ -15,7 +15,6 @@ jobs:
     
     steps:
       - name: Checkout Code
-        # This fixes the "failed to run git" error
         uses: actions/checkout@v4
 
       - name: Download VS Bootstrapper
@@ -40,23 +39,17 @@ jobs:
             exit 1
           }
 
-      - name: Ultra Aggressive Compression (7-Zip LZMA2)
+      - name: Ultra Aggressive Compression & Splitting (7-Zip)
         run: |
-          # TUNING PARAMETERS:
-          # -m0=lzma2: Uses the strongest algorithm
-          # -mx=9: Level 9 (Ultra)
-          # -md=256m: 256MB dictionary (Higher = better compression, requires more RAM. GitHub has 7GB RAM, so this is safe)
-          # -mfb=273: Maximize number of fast bytes for matches
-          # -ms=on: Solid archive (Treats all files as one stream; essential for VS layouts)
-          # -myx=9: Extensive file analysis
-          
-          7z a -t7z -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -myx=9 WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
+          # -v2000m: Splits the archive into 2000MB parts to stay under the 2GB GitHub limit
+          # -mx9, -md256m, -ms=on: Aggressive settings as discussed
+          7z a -t7z -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -myx=9 -v2000m WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
 
-      - name: Create Release and Upload
+      - name: Create Release and Upload Parts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # gh CLI now works because of the checkout step
-          gh release create ${{ github.event.inputs.version }} WinUI_Offline_Bundle.7z `
+          # Use a wildcard to upload all parts (.7z.001, .7z.002, etc.)
+          gh release create ${{ github.event.inputs.version }} WinUI_Offline_Bundle.7z.* `
             --title "WinUI Offline Installer ${{ github.event.inputs.version }}" `
-            --notes "Optimized offline layout for WinUI 3 / Windows App SDK."
+            --notes "Optimized offline layout for WinUI 3. Split into 2GB parts due to GitHub upload limits. To extract: Download all parts and open the .001 file with 7-Zip."
