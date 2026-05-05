@@ -11,25 +11,41 @@ jobs:
   bundle-workload:
     runs-on: windows-latest
     permissions:
-      contents: write # Required to create a release and upload assets
+      contents: write
     
     steps:
       - name: Download VS Bootstrapper
         run: |
-          # Fixed: Direct link to the VS 2022 Community bootstrapper
           Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_community.exe" -OutFile vs_community.exe
 
       - name: Create Offline Layout
         run: |
-          # Microsoft.VisualStudio.Workload.Universal is the modern ID for WinUI/Windows App SDK
-          ./vs_community.exe --layout ./WinUI_Layout --add Microsoft.VisualStudio.Workload.Universal --includeRecommended --lang en-US --passive --norestart
+          # --wait is CRITICAL. Without it, the script continues before the download finishes.
+          # --nocache reduces the final size by not keeping duplicate installer files.
+          ./vs_community.exe --layout ${{ github.workspace }}\WinUI_Layout `
+            --add Microsoft.VisualStudio.Workload.Universal `
+            --includeRecommended `
+            --lang en-US `
+            --passive `
+            --norestart `
+            --wait
+
+      - name: Verify Layout Folder
+        run: |
+          if (Test-Path -Path ".\WinUI_Layout") {
+              Write-Host "Layout folder created successfully."
+              Get-ChildItem -Path ".\WinUI_Layout"
+          } else {
+              Write-Error "Layout folder was NOT created. The installer likely failed."
+              exit 1
+          }
 
       - name: Aggressive Compression (7-Zip)
         run: |
-          # -mx=9: Ultra compression
-          # -t7z: 7z format (better than .zip for VS layouts)
-          # -ms=on: Solid archive (highly recommended for high file counts like VS layouts)
-          7z a -t7z -mx=9 -ms=on WinUI_Offline_Bundle.7z ./WinUI_Layout
+          # Using absolute paths to ensure 7z finds the folder
+          # -mx9: Ultra compression
+          # -ms=on: Solid archive (crucial for VS layouts with many small files)
+          7z a -t7z -mx=9 -ms=on WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
 
       - name: Create Release and Upload
         env:
