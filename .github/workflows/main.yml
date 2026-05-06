@@ -29,18 +29,17 @@ jobs:
 
           $argList = @(
             "--layout `"$layout`"",
-            "--config `"${{ github.workspace }}\response.json`"",
+            "--add Microsoft.VisualStudio.Workload.CoreEditor",
+            "--add Microsoft.VisualStudio.Workload.Universal",
+            "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
+            "--add Microsoft.VisualStudio.Workload.NativeDesktop",
+            "--add Microsoft.VisualStudio.Component.Windows11SDK.26100",
+            "--includeRecommended",
+            "--includeOptional",
+            "--lang en-US",
             "--passive",
             "--norestart"
           ) -join " "
-
-          $vsProcessNames = @(
-            "vs_community",
-            "vs_setup_bootstrapper",
-            "vs_installer",
-            "vs_installershell",
-            "vs_installerservice"
-          )
 
           Start-Process -FilePath ".\vs_community.exe" -ArgumentList $argList
           Write-Host "Installer launched, polling until all VS processes exit..."
@@ -128,13 +127,20 @@ jobs:
             exit 1
           }
 
-      - name: Show Installer Logs
+      - name: Dump VS Installer Logs
         if: always()
         run: |
-          $logs = Get-ChildItem "$env:TEMP" -Filter "dd_*.log" -ErrorAction SilentlyContinue
-          foreach ($log in $logs) {
-            Write-Host "=== $($log.FullName) ==="
-            Get-Content $log.FullName | Select-Object -Last 50
+          $logPaths = @(
+            "$env:TEMP\dd_bootstrapper*.log",
+            "$env:TEMP\dd_setup*.log",
+            "$env:TEMP\dd_client*.log",
+            "$env:ProgramData\Microsoft\VisualStudio\Packages\_Instances\*\logs\*.log"
+          )
+          foreach ($pattern in $logPaths) {
+            Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "=== $($_.FullName) ==="
+              Get-Content $_.FullName -Tail 50
+            }
           }
           
       - name: Ultra Compression & Splitting
