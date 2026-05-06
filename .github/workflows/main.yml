@@ -40,43 +40,58 @@ jobs:
             "--norestart"
           ) -join " "
 
+          $vsProcessNames = @(
+            "vs_community",
+            "vs_setup_bootstrapper",
+            "vs_installer",
+            "vs_installershell",
+            "vs_installerservice"
+          )
+
           Start-Process -FilePath ".\vs_community.exe" -ArgumentList $argList
+          Write-Host "Installer launched, polling until all VS processes exit..."
 
-          # Poll until the real bootstrapper spawns (up to 60s)
-          Write-Host "Waiting for vs_setup_bootstrapper to spawn..."
-          $bootstrapper = $null
-          for ($i = 0; $i -lt 30; $i++) {
-            Start-Sleep -Seconds 2
-            $bootstrapper = Get-Process -Name "vs_setup_bootstrapper" -ErrorAction SilentlyContinue
-            if ($bootstrapper) {
-              Write-Host "Found vs_setup_bootstrapper (PID $($bootstrapper.Id))"
-              break
+          $stableCount = 0
+          $lastSize = 0
+
+          while ($true) {
+            Start-Sleep -Seconds 15
+
+            $running = Get-Process | Where-Object { $vsProcessNames -contains $_.Name }
+
+            $currentSize = (Get-ChildItem $layout -Recurse -File -ErrorAction SilentlyContinue |
+                            Measure-Object -Property Length -Sum).Sum
+
+            $sizeGB = [math]::Round($currentSize / 1GB, 2)
+            Write-Host "Running VS procs: $($running.Count) | Layout size: $sizeGB GB"
+
+            if ($running.Count -eq 0) {
+              # No VS processes — but wait for size to stabilize before declaring done
+              if ($currentSize -eq $lastSize) {
+                $stableCount++
+                Write-Host "Size stable for $($stableCount * 15)s"
+                if ($stableCount -ge 3) {
+                  Write-Host "All VS processes gone and size stable. Done."
+                  break
+                }
+              } else {
+                $stableCount = 0
+              }
+            } else {
+              $stableCount = 0
             }
+
+            $lastSize = $currentSize
           }
 
-          if ($null -eq $bootstrapper) {
-            Write-Error "vs_setup_bootstrapper never started"
-            exit 1
-          }
-
-          # Block until it finishes — don't touch ExitCode, it's unreliable via Get-Process
-          Wait-Process -Id $bootstrapper.Id
-          Write-Host "vs_setup_bootstrapper exited"
-
-          # Ground truth: verify the layout is actually populated
           $files = (Get-ChildItem $layout -Recurse -File).Count
-          $sizeGB = (Get-ChildItem $layout -Recurse -File | 
-                     Measure-Object -Property Length -Sum).Sum / 1GB
-          $sizeGB = [math]::Round($sizeGB, 2)
-
-          Write-Host "Layout: $files files, $sizeGB GB"
+          $sizeGB = [math]::Round($lastSize / 1GB, 2)
+          Write-Host "Final layout: $files files, $sizeGB GB"
 
           if ($sizeGB -lt 30) {
             Write-Error "Layout too small ($sizeGB GB) — download did not complete"
             exit 1
           }
-
-          Write-Host "Layout looks good."
       - name: Ultra Compression & Splitting
         run: |
           7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
