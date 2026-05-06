@@ -1,29 +1,32 @@
-name: Bundle WinUI Offline Installer
+name: Unified WinUI Offline Bundle
 on: 
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release Version (e.g., v1.0.0)'
+        description: 'Release Version'
         required: true
         default: 'v1.0.0'
 
 jobs:
-  bundle-workload:
+  bundle:
     runs-on: windows-latest
     permissions:
       contents: write
     
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download VS Bootstrapper
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_community.exe" -OutFile vs_community.exe
+      - name: Download Bootstrapper
+        run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_community.exe" -OutFile vs_community.exe
 
-      - name: Create Offline Layout
+      - name: Create Unified Layout
         run: |
-          $params = "--layout `"${{ github.workspace }}\WinUI_Layout`" ",
+          # Combine ALL workloads into ONE folder named 'VS_Layout'
+          $params = "--layout `"${{ github.workspace }}\VS_Layout`" ",
+                    "--add Microsoft.VisualStudio.Workload.CoreEditor ",
+                    "--add Microsoft.VisualStudio.Workload.Universal ",
+                    "--add Microsoft.VisualStudio.Workload.ManagedDesktop ",
                     "--add Microsoft.VisualStudio.Workload.NativeDesktop ",
                     "--includeRecommended ",
                     "--lang en-US ",
@@ -31,25 +34,21 @@ jobs:
                     "--norestart ",
                     "--wait"
           
-          Write-Host "Starting download/layout process..."
-          $process = Start-Process -FilePath ".\vs_community.exe" -ArgumentList $params -Wait -PassThru
-          
-          if ($process.ExitCode -ne 0 -and $process.ExitCode -ne 3010) {
-            Write-Error "Visual Studio Installer failed with exit code $($process.ExitCode)"
-            exit 1
-          }
+          Start-Process -FilePath ".\vs_community.exe" -ArgumentList $params -Wait
 
-      - name: Ultra Aggressive Compression & Splitting (7-Zip)
+      - name: Ultra Compression & Splitting
         run: |
-          # -v2000m: Splits the archive into 2000MB parts to stay under the 2GB GitHub limit
-          # -mx9, -md256m, -ms=on: Aggressive settings as discussed
-          7z a -t7z -m0=lzma2 -mx=9 -md=256m -mfb=273 -ms=on -myx=9 -v2000m WinUI_Offline_Bundle.7z "${{ github.workspace }}\WinUI_Layout"
+          # We compress the unified folder. 
+          # -v2000m ensures we stay under the 2GB GitHub limit per file.
+          7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
 
-      - name: Create Release and Upload Parts
+      - name: Cleanup Layout to Save Space
+        run: Remove-Item -Recurse -Force "${{ github.workspace }}\VS_Layout"
+
+      - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Use a wildcard to upload all parts (.7z.001, .7z.002, etc.)
-          gh release create ${{ github.event.inputs.version }} WinUI_Offline_Bundle.7z.* `
-            --title "WinUI Offline Installer ${{ github.event.inputs.version }}" `
-            --notes "Optimized offline layout for WinUI 3. Split into 2GB parts due to GitHub upload limits. To extract: Download all parts and open the .001 file with 7-Zip."
+          gh release create ${{ github.event.inputs.version }} VS_Offline_Final.7z.* `
+            --title "Full Offline VS Layout ${{ github.event.inputs.version }}" `
+            --notes "Includes: Core, WinUI, .NET Desktop, and C++ Desktop. Download ALL parts, extract the .001 file."
