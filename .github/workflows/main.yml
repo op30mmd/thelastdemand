@@ -29,7 +29,6 @@ jobs:
 
           $argList = @(
             "--layout `"$layout`"",
-            "--add Microsoft.VisualStudio.Workload.CoreEditor",
             "--add Microsoft.VisualStudio.Workload.Universal",
             "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
             "--add Microsoft.VisualStudio.Workload.NativeDesktop",
@@ -38,21 +37,29 @@ jobs:
             "--lang en-US",
             "--passive",
             "--norestart"
-          )
+          ) -join " "
 
-          $proc = Start-Process `
-            -FilePath ".\vs_community.exe" `
-            -ArgumentList ($argList -join " ") `
-            -Wait `
-            -PassThru
+          # Launch the stub
+          Start-Process -FilePath ".\vs_community.exe" -ArgumentList $argList
 
-          Write-Host "Exit code: $($proc.ExitCode)"
+          # Give the stub a moment to extract and spawn the real installer
+          Start-Sleep -Seconds 10
 
-          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            Write-Error "VS layout creation failed with exit code $($proc.ExitCode)"
-            exit $proc.ExitCode
+          # Now wait on the real bootstrapper process
+          $bootstrapper = Get-Process -Name "vs_setup_bootstrapper" -ErrorAction SilentlyContinue
+          if ($null -eq $bootstrapper) {
+            Write-Error "vs_setup_bootstrapper never started"
+            exit 1
           }
 
+          Write-Host "Waiting on vs_setup_bootstrapper (PID $($bootstrapper.Id))..."
+          $bootstrapper.WaitForExit()
+
+          Write-Host "Exit code: $($bootstrapper.ExitCode)"
+          if ($bootstrapper.ExitCode -ne 0 -and $bootstrapper.ExitCode -ne 3010) {
+            Write-Error "Layout failed with exit code $($bootstrapper.ExitCode)"
+            exit $bootstrapper.ExitCode
+          }
       - name: Ultra Compression & Splitting
         run: |
           7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
