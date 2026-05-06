@@ -29,14 +29,7 @@ jobs:
 
           $argList = @(
             "--layout `"$layout`"",
-            "--add Microsoft.VisualStudio.Workload.CoreEditor",
-            "--add Microsoft.VisualStudio.Workload.Universal",
-            "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
-            "--add Microsoft.VisualStudio.Workload.NativeDesktop",
-            "--add Microsoft.VisualStudio.Component.Windows11SDK.26100",
-            "--includeRecommended",
-            "--includeOptional",
-            "--lang en-US",
+            "--config `"${{ github.workspace }}\response.json`"",
             "--passive",
             "--norestart"
           ) -join " "
