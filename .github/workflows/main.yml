@@ -127,6 +127,16 @@ jobs:
             Write-Error "Layout too small ($sizeGB GB) — download did not complete"
             exit 1
           }
+
+      - name: Show Installer Logs
+        if: always()
+        run: |
+          $logs = Get-ChildItem "$env:TEMP" -Filter "dd_*.log" -ErrorAction SilentlyContinue
+          foreach ($log in $logs) {
+            Write-Host "=== $($log.FullName) ==="
+            Get-Content $log.FullName | Select-Object -Last 50
+          }
+          
       - name: Ultra Compression & Splitting
         run: |
           7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
