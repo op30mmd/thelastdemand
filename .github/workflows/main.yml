@@ -29,6 +29,7 @@ jobs:
 
           $argList = @(
             "--layout `"$layout`"",
+            "--add Microsoft.VisualStudio.Workload.CoreEditor",
             "--add Microsoft.VisualStudio.Workload.Universal",
             "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
             "--add Microsoft.VisualStudio.Workload.NativeDesktop",
@@ -39,27 +40,43 @@ jobs:
             "--norestart"
           ) -join " "
 
-          # Launch the stub
           Start-Process -FilePath ".\vs_community.exe" -ArgumentList $argList
 
-          # Give the stub a moment to extract and spawn the real installer
-          Start-Sleep -Seconds 10
+          # Poll until the real bootstrapper spawns (up to 60s)
+          Write-Host "Waiting for vs_setup_bootstrapper to spawn..."
+          $bootstrapper = $null
+          for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            $bootstrapper = Get-Process -Name "vs_setup_bootstrapper" -ErrorAction SilentlyContinue
+            if ($bootstrapper) {
+              Write-Host "Found vs_setup_bootstrapper (PID $($bootstrapper.Id))"
+              break
+            }
+          }
 
-          # Now wait on the real bootstrapper process
-          $bootstrapper = Get-Process -Name "vs_setup_bootstrapper" -ErrorAction SilentlyContinue
           if ($null -eq $bootstrapper) {
             Write-Error "vs_setup_bootstrapper never started"
             exit 1
           }
 
-          Write-Host "Waiting on vs_setup_bootstrapper (PID $($bootstrapper.Id))..."
-          $bootstrapper.WaitForExit()
+          # Block until it finishes — don't touch ExitCode, it's unreliable via Get-Process
+          Wait-Process -Id $bootstrapper.Id
+          Write-Host "vs_setup_bootstrapper exited"
 
-          Write-Host "Exit code: $($bootstrapper.ExitCode)"
-          if ($bootstrapper.ExitCode -ne 0 -and $bootstrapper.ExitCode -ne 3010) {
-            Write-Error "Layout failed with exit code $($bootstrapper.ExitCode)"
-            exit $bootstrapper.ExitCode
+          # Ground truth: verify the layout is actually populated
+          $files = (Get-ChildItem $layout -Recurse -File).Count
+          $sizeGB = (Get-ChildItem $layout -Recurse -File | 
+                     Measure-Object -Property Length -Sum).Sum / 1GB
+          $sizeGB = [math]::Round($sizeGB, 2)
+
+          Write-Host "Layout: $files files, $sizeGB GB"
+
+          if ($sizeGB -lt 30) {
+            Write-Error "Layout too small ($sizeGB GB) — download did not complete"
+            exit 1
           }
+
+          Write-Host "Layout looks good."
       - name: Ultra Compression & Splitting
         run: |
           7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
