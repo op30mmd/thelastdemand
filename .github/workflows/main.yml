@@ -1,5 +1,5 @@
 name: Unified WinUI Offline Bundle
-on: 
+on:
   workflow_dispatch:
     inputs:
       version:
@@ -12,7 +12,7 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -22,24 +22,27 @@ jobs:
 
       - name: Create Unified Layout
         run: |
-          # Combine ALL workloads into ONE folder named 'VS_Layout'
-          $params = "--layout `"${{ github.workspace }}\VS_Layout`" ",
-                    "--add Microsoft.VisualStudio.Workload.CoreEditor ",
-                    "--add Microsoft.VisualStudio.Workload.Universal ",
-                    "--add Microsoft.VisualStudio.Workload.ManagedDesktop ",
-                    "--add Microsoft.VisualStudio.Workload.NativeDesktop ",
-                    "--includeRecommended ",
-                    "--lang en-US ",
-                    "--quiet ",
-                    "--norestart ",
-                    "--wait"
-          
-          Start-Process -FilePath ".\vs_community.exe" -ArgumentList $params -Wait
+          $layout = "${{ github.workspace }}\VS_Layout"
+
+          & .\vs_community.exe `
+            --layout "$layout" `
+            --add Microsoft.VisualStudio.Workload.CoreEditor `
+            --add Microsoft.VisualStudio.Workload.Universal `
+            --add Microsoft.VisualStudio.Workload.ManagedDesktop `
+            --add Microsoft.VisualStudio.Workload.NativeDesktop `
+            --includeRecommended `
+            --includeOptional `
+            --lang en-US `
+            --quiet `
+            --norestart
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "VS layout creation failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
 
       - name: Ultra Compression & Splitting
         run: |
-          # We compress the unified folder. 
-          # -v2000m ensures we stay under the 2GB GitHub limit per file.
           7z a -t7z -m0=lzma2 -mx=9 -md=128m -ms=on -v2000m VS_Offline_Final.7z "${{ github.workspace }}\VS_Layout"
 
       - name: Cleanup Layout to Save Space
