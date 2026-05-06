@@ -20,25 +20,37 @@ jobs:
       - name: Download Bootstrapper
         run: Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_community.exe" -OutFile vs_community.exe
 
+      - name: Check Disk Space
+        run: Get-PSDrive C | Select-Object Used, Free
+
       - name: Create Unified Layout
         run: |
           $layout = "${{ github.workspace }}\VS_Layout"
 
-          & .\vs_community.exe `
-            --layout "$layout" `
-            --add Microsoft.VisualStudio.Workload.CoreEditor `
-            --add Microsoft.VisualStudio.Workload.Universal `
-            --add Microsoft.VisualStudio.Workload.ManagedDesktop `
-            --add Microsoft.VisualStudio.Workload.NativeDesktop `
-            --includeRecommended `
-            --includeOptional `
-            --lang en-US `
-            --quiet `
-            --norestart
+          $argList = @(
+            "--layout `"$layout`"",
+            "--add Microsoft.VisualStudio.Workload.CoreEditor",
+            "--add Microsoft.VisualStudio.Workload.Universal",
+            "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
+            "--add Microsoft.VisualStudio.Workload.NativeDesktop",
+            "--includeRecommended",
+            "--includeOptional",
+            "--lang en-US",
+            "--passive",
+            "--norestart"
+          )
 
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "VS layout creation failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
+          $proc = Start-Process `
+            -FilePath ".\vs_community.exe" `
+            -ArgumentList ($argList -join " ") `
+            -Wait `
+            -PassThru
+
+          Write-Host "Exit code: $($proc.ExitCode)"
+
+          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            Write-Error "VS layout creation failed with exit code $($proc.ExitCode)"
+            exit $proc.ExitCode
           }
 
       - name: Ultra Compression & Splitting
