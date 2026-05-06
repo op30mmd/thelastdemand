@@ -83,45 +83,45 @@ jobs:
           Write-Host "Final layout: $files files, $sizeGB GB"
 
           # Fix/verify the layout integrity
-          Write-Host "Running --fix to repair any incomplete packages..."
-          $fixArgs = @(
-            "--layout `"$layout`"",
-            "--fix",
-            "--lang en-US",
-            "--passive",
-            "--norestart"
-          ) -join " "
+          # Write-Host "Running --fix to repair any incomplete packages..."
+          # $fixArgs = @(
+          #   "--layout `"$layout`"",
+          #   "--fix",
+          #   "--lang en-US",
+          #   "--passive",
+          #   "--norestart"
+          # ) -join " "
 
-          Start-Process -FilePath ".\vs_community.exe" -ArgumentList $fixArgs
+          # Start-Process -FilePath ".\vs_community.exe" -ArgumentList $fixArgs
 
-          # Poll the same way for --fix pass
-          $stableCount = 0
-          $lastSize = 0
+          # # Poll the same way for --fix pass
+          # $stableCount = 0
+          # $lastSize = 0
 
-          while ($true) {
-            Start-Sleep -Seconds 15
+          # while ($true) {
+          #   Start-Sleep -Seconds 15
 
-            $running = Get-Process | Where-Object { $vsProcessNames -contains $_.Name }
-            $currentSize = (Get-ChildItem $layout -Recurse -File -ErrorAction SilentlyContinue |
-                            Measure-Object -Property Length -Sum).Sum
-            $sizeGB = [math]::Round($currentSize / 1GB, 2)
-            Write-Host "[fix] Running VS procs: $($running.Count) | Layout size: $sizeGB GB"
+          #   $running = Get-Process | Where-Object { $vsProcessNames -contains $_.Name }
+          #   $currentSize = (Get-ChildItem $layout -Recurse -File -ErrorAction SilentlyContinue |
+          #                   Measure-Object -Property Length -Sum).Sum
+          #   $sizeGB = [math]::Round($currentSize / 1GB, 2)
+          #   Write-Host "[fix] Running VS procs: $($running.Count) | Layout size: $sizeGB GB"
 
-            if ($running.Count -eq 0) {
-              if ($currentSize -eq $lastSize) {
-                $stableCount++
-                if ($stableCount -ge 3) {
-                  Write-Host "Fix pass complete."
-                  break
-                }
-              } else {
-                $stableCount = 0
-              }
-            } else {
-              $stableCount = 0
-            }
-            $lastSize = $currentSize
-          }
+          #   if ($running.Count -eq 0) {
+          #     if ($currentSize -eq $lastSize) {
+          #       $stableCount++
+          #       if ($stableCount -ge 3) {
+          #         Write-Host "Fix pass complete."
+          #         break
+          #       }
+          #     } else {
+          #       $stableCount = 0
+          #     }
+          #   } else {
+          #     $stableCount = 0
+          #   }
+          #   $lastSize = $currentSize
+          # }
 
           if ($sizeGB -lt 5) {
             Write-Error "Layout too small ($sizeGB GB) — download did not complete"
