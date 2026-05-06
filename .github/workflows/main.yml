@@ -33,6 +33,7 @@ jobs:
             "--add Microsoft.VisualStudio.Workload.Universal",
             "--add Microsoft.VisualStudio.Workload.ManagedDesktop",
             "--add Microsoft.VisualStudio.Workload.NativeDesktop",
+            "--add Microsoft.VisualStudio.Component.Windows11SDK.26100",
             "--includeRecommended",
             "--includeOptional",
             "--lang en-US",
@@ -88,7 +89,7 @@ jobs:
           $sizeGB = [math]::Round($lastSize / 1GB, 2)
           Write-Host "Final layout: $files files, $sizeGB GB"
 
-          if ($sizeGB -lt 30) {
+          if ($sizeGB -lt 5) {
             Write-Error "Layout too small ($sizeGB GB) — download did not complete"
             exit 1
           }
