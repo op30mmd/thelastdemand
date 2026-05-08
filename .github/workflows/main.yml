@@ -127,6 +127,28 @@ jobs:
             exit 1
           }
 
+      - name: Inspect Catalog Structure
+        run: |
+          $layout = "${{ github.workspace }}\VS_Layout"
+          $catalog = Get-Content "$layout\Catalog.json" | ConvertFrom-Json
+
+          # Show top-level keys
+          Write-Host "=== Top-level keys ==="
+          $catalog.PSObject.Properties.Name
+
+          # Show structure of first package entry
+          Write-Host "=== First package entry ==="
+          $catalog.packages[0] | ConvertTo-Json -Depth 5
+
+          # Try to find one known-missing package
+          Write-Host "=== Search for WebSiteProject.DTE ==="
+          $catalog.packages | Where-Object { 
+            $_.id -like "*WebSiteProject*" 
+          } | ConvertTo-Json -Depth 5
+
+          # Show total package count
+          Write-Host "=== Total packages: $($catalog.packages.Count) ==="
+
       - name: Patch Missing Packages
         run: |
           $layout = "${{ github.workspace }}\VS_Layout"
