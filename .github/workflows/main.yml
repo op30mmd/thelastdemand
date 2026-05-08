@@ -149,87 +149,58 @@ jobs:
           # Show total package count
           Write-Host "=== Total packages: $($catalog.packages.Count) ==="
 
-      - name: Patch Missing Packages
+      - name: Comprehensive Catalog Patch
         run: |
           $layout = "${{ github.workspace }}\VS_Layout"
           $catalog = Get-Content "$layout\Catalog.json" | ConvertFrom-Json
 
-          # All package IDs confirmed missing from offline install logs
-          $missing = @(
-            "Microsoft.VisualStudio.WebSiteProject.DTE",
-            "Microsoft.VisualStudio.Diagnostics.AspNetHelper",
-            "Microsoft.VisualStudio.Diagnostics.AspNetHelper.Standard",
-            "Microsoft.VisualStudio.Platform.CallHierarchy",
-            "Microsoft.VisualStudio.Community.ProductArch.Neutral",
-            "Microsoft.MSHtml",
-            "Microsoft.VisualStudio.VC.Ide.Common",
-            "Microsoft.VisualStudio.VC.Ide.Common.Resources",
-            "Microsoft.VisualStudio.VC.Ide.Debugger.Resources",
-            "Microsoft.VisualStudio.VC.Ide.Debugger.Concord.Resources",
-            "Microsoft.VisualStudio.VC.MSVCDis",
-            "Microsoft.VisualStudio.VC.MSBuild.v170.Base.Resources",
-            "Microsoft.DiaSymReader.PortablePdb",
-            "Microsoft.VisualCpp.Servicing.Redist",
-            "Microsoft.VisualCpp.RuntimeDebug.14",
-            "Microsoft.VisualCpp.CRT.ClickOnce.Msi",
-            "Microsoft.VC.14.44.17.14.Servicing"
-          )
+          $downloaded = 0
+          $skipped = 0
+          $failed = 0
 
-          foreach ($pkgId in $missing) {
-            $packages = $catalog.packages | Where-Object { $_.id -eq $pkgId }
-            foreach ($pkg in $packages) {
-              foreach ($payload in $pkg.payloads) {
-                $url = $payload.url
-                $fileName = $payload.fileName
-                if (-not $url -or -not $fileName) { continue }
+          foreach ($pkg in $catalog.packages) {
+            if (-not $pkg.payloads) { continue }
 
-                # Reconstruct the folder name the layout expects
-                $folderName = $pkg.id + ",version=" + $pkg.version
-                if ($pkg.language)     { $folderName += ",language=" + $pkg.language }
-                if ($pkg.chip)         { $folderName += ",chip=" + $pkg.chip }
-                if ($pkg.productArch)  { $folderName += ",productarch=" + $pkg.productArch }
-                if ($pkg.machineArch)  { $folderName += ",machinearch=" + $pkg.machineArch }
+            # Skip non-English language packs — we only want en-US or neutral
+            if ($pkg.language -and $pkg.language -ne "en-US") { continue }
 
-                $destDir = Join-Path $layout $folderName
-                $destFile = Join-Path $destDir $fileName
+            # Build the folder name exactly as the layout expects
+            $folderName = $pkg.id + ",version=" + $pkg.version
+            if ($pkg.language)    { $folderName += ",language=" + $pkg.language }
+            if ($pkg.chip)        { $folderName += ",chip=" + $pkg.chip }
+            if ($pkg.productArch) { $folderName += ",productarch=" + $pkg.productArch }
+            if ($pkg.machineArch) { $folderName += ",machinearch=" + $pkg.machineArch }
 
-                if (Test-Path $destFile) {
-                  Write-Host "Already exists: $destFile"
-                  continue
-                }
+            $destDir = Join-Path $layout $folderName
 
-                New-Item -ItemType Directory -Force -Path $destDir | Out-Null
-                Write-Host "Downloading $pkgId / $fileName ..."
-                try {
-                  Invoke-WebRequest -Uri $url -OutFile $destFile -UseBasicParsing
-                  Write-Host "OK: $destFile"
-                } catch {
-                  Write-Warning "FAILED: $url — $_"
-                }
+            foreach ($payload in $pkg.payloads) {
+              if (-not $payload.url -or -not $payload.fileName) { continue }
+
+              $destFile = Join-Path $destDir $payload.fileName
+
+              if (Test-Path $destFile) {
+                $skipped++
+                continue
+              }
+
+              New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+              try {
+                Invoke-WebRequest -Uri $payload.url -OutFile $destFile -UseBasicParsing
+                $downloaded++
+                Write-Host "Downloaded: $folderName\$($payload.fileName)"
+              } catch {
+                $failed++
+                Write-Warning "FAILED: $($payload.url) — $_"
               }
             }
           }
 
-          # Final count
           $files = (Get-ChildItem $layout -Recurse -File).Count
-          $sizeGB = [math]::Round((Get-ChildItem $layout -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1GB, 2)
-          Write-Host "Layout after patch: $files files, $sizeGB GB"
+          $sizeGB = [math]::Round((Get-ChildItem $layout -Recurse -File | 
+                    Measure-Object -Property Length -Sum).Sum / 1GB, 2)
 
-      - name: Dump VS Installer Logs
-        if: always()
-        run: |
-          $logPaths = @(
-            "$env:TEMP\dd_bootstrapper*.log",
-            "$env:TEMP\dd_setup*.log",
-            "$env:TEMP\dd_client*.log",
-            "$env:ProgramData\Microsoft\VisualStudio\Packages\_Instances\*\logs\*.log"
-          )
-          foreach ($pattern in $logPaths) {
-            Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "=== $($_.FullName) ==="
-              Get-Content $_.FullName -Tail 50
-            }
-          }
+          Write-Host "Downloaded: $downloaded | Skipped: $skipped | Failed: $failed"
+          Write-Host "Final layout: $files files, $sizeGB GB"
           
       - name: Ultra Compression & Splitting
         run: |
